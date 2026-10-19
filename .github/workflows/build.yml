@@ -1,0 +1,102 @@
+name: Сборка Сократа
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  HF_MODEL: facebook/nllb-200-distilled-1.3B
+
+jobs:
+  model:
+    name: Модель NLLB-200 → CTranslate2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: model
+          key: nllb-1.3B-ct2-int8-${{ hashFiles('scripts/convert_model.sh') }}
+
+      - name: Конвертация
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: scripts/convert_model.sh model "$HF_MODEL"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model
+          path: model
+          retention-days: 2
+          compression-level: 0
+
+  app:
+    name: Приложение (${{ matrix.arch }})
+    needs: model
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: model
+          path: model
+
+      - name: Встроенный Python
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/bundle_python.sh build/python
+
+      - name: Сборка приложения
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_TYPE" == "tag" ]] || VERSION="0.0.${GITHUB_RUN_NUMBER}"
+          VERSION="$VERSION" scripts/build_app.sh build/python model build
+
+      - name: Проверка перевода
+        run: scripts/smoke_test.sh "build/Сократ.app"
+
+      - name: DMG
+        run: scripts/make_dmg.sh "build/Сократ.app" "build/Sokrat-${{ matrix.arch }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sokrat-${{ matrix.arch }}
+          path: build/Sokrat-${{ matrix.arch }}.dmg
+          compression-level: 0
+
+  release:
+    name: Публикация релиза
+    if: github.ref_type == 'tag'
+    needs: app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Sokrat-*
+          merge-multiple: true
+      - name: Релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" Sokrat-*.dmg \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Сократ $GITHUB_REF_NAME" \
+            --notes "**Sokrat-arm64.dmg** — для Mac на Apple Silicon (M1–M4).
+          **Sokrat-intel.dmg** — для Mac на Intel.
+
+          Откройте .dmg, перетащите «Сократ» в «Программы», затем см. раздел «Первый запуск» в README."
