@@ -117,11 +117,11 @@ struct LanguagePicker: View {
                 List {
                     if query.isEmpty {
                         if let autoTitle { row(nil, autoTitle) }
-                        Section("Избранные") {
+                        Section(header: Text("Избранные")) {
                             ForEach(Lang.favorites) { row($0, $0.name) }
                         }
                     }
-                    Section(query.isEmpty ? "Все языки" : "Найдено") {
+                    Section(header: Text(query.isEmpty ? "Все языки" : "Найдено")) {
                         ForEach(Lang.all.filter { $0.matches(query) }) { row($0, $0.name) }
                     }
                 }
@@ -230,7 +230,7 @@ final class TranslatorPanelController {
         p.hidesOnDeactivate = false
         p.isReleasedWhenClosed = false
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        p.contentView = NSHostingView(rootView: TranslatorView(model: model) { [weak p] in p?.orderOut(nil) })
+        p.contentView = NSHostingView(rootView: TranslatorView(model: self.model) { [weak p] in p?.orderOut(nil) })
         return p
     }()
 

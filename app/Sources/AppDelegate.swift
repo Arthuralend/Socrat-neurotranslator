@@ -13,7 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         monitor.onTrigger = { [weak self] in
             // Даём второму ⌘C время положить текст в буфер обмена.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { self?.translateClipboard() }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 120_000_000)
+                self?.translateClipboard()
+            }
         }
         monitor.start()
 

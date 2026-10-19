@@ -59,7 +59,7 @@ final class ServerManager {
     private func get(_ path: String, timeout: TimeInterval) async -> [String: Any]? {
         var req = URLRequest(url: baseURL.appendingPathComponent(path))
         req.timeoutInterval = timeout
-        guard let (data, _) = try? await URLSession.shared.data(for: req) else { return nil }
+        guard let data = try? await URLSession.shared.data(for: req).0 else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 

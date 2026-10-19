@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: bash  # bash -eo pipefail: ошибка в конвейере с tee роняет шаг
+
 env:
   HF_MODEL: facebook/nllb-200-distilled-1.3B
 
@@ -59,25 +63,36 @@ jobs:
       - name: Встроенный Python
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/bundle_python.sh build/python
+        run: |
+          mkdir -p build
+          scripts/bundle_python.sh build/python 2>&1 | tee -a build/ci.log
 
       - name: Сборка приложения
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           [[ "$GITHUB_REF_TYPE" == "tag" ]] || VERSION="0.0.${GITHUB_RUN_NUMBER}"
-          VERSION="$VERSION" scripts/build_app.sh build/python model build
+          VERSION="$VERSION" scripts/build_app.sh build/python model build 2>&1 | tee -a build/ci.log
 
       - name: Проверка перевода
-        run: scripts/smoke_test.sh "build/Сократ.app"
+        run: scripts/smoke_test.sh "build/Сократ.app" 2>&1 | tee -a build/ci.log
 
       - name: DMG
-        run: scripts/make_dmg.sh "build/Сократ.app" "build/Sokrat-${{ matrix.arch }}.dmg"
+        run: scripts/make_dmg.sh "build/Сократ.app" "build/Sokrat-${{ matrix.arch }}.dmg" 2>&1 | tee -a build/ci.log
 
       - uses: actions/upload-artifact@v4
         with:
           name: Sokrat-${{ matrix.arch }}
           path: build/Sokrat-${{ matrix.arch }}.dmg
           compression-level: 0
+
+      - name: Ошибки сборки — в сводку
+        if: failure()
+        run: |
+          [[ -f build/ci.log ]] || exit 0
+          grep -E "error|Error|ERROR|failed|Traceback|No such" build/ci.log | head -40 > build/err.txt || true
+          [[ -s build/err.txt ]] || tail -40 build/ci.log > build/err.txt
+          msg="$(sed -e 's/%/%25/g' build/err.txt | awk '{printf "%s%%0A", $0}')"
+          echo "::error title=Лог сборки::$msg"
 
   release:
     name: Публикация релиза
