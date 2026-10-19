@@ -3,7 +3,6 @@ name: Сборка Сократа
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -69,9 +68,7 @@ jobs:
 
       - name: Сборка приложения
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF_TYPE" == "tag" ]] || VERSION="0.0.${GITHUB_RUN_NUMBER}"
-          VERSION="$VERSION" scripts/build_app.sh build/python model build 2>&1 | tee -a build/ci.log
+          VERSION="$(cat VERSION)" scripts/build_app.sh build/python model build 2>&1 | tee -a build/ci.log
 
       - name: Проверка перевода
         run: scripts/smoke_test.sh "build/Сократ.app" 2>&1 | tee -a build/ci.log
@@ -96,22 +93,40 @@ jobs:
 
   release:
     name: Публикация релиза
-    if: github.ref_type == 'tag'
+    # Релиз создаётся сам, когда в файле VERSION появляется новый номер версии.
+    if: github.ref == 'refs/heads/main'
     needs: app
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Есть ли уже такой релиз
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v$(cat VERSION)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/download-artifact@v4
+        if: steps.check.outputs.exists == 'false'
         with:
           pattern: Sokrat-*
           merge-multiple: true
       - name: Релиз
+        if: steps.check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.check.outputs.tag }}
         run: |
-          gh release create "$GITHUB_REF_NAME" Sokrat-*.dmg \
+          gh release create "$TAG" Sokrat-*.dmg \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Сократ $GITHUB_REF_NAME" \
+            --target "$GITHUB_SHA" \
+            --title "Сократ $TAG" \
             --notes "**Sokrat-arm64.dmg** — для Mac на Apple Silicon (M1–M4).
           **Sokrat-intel.dmg** — для Mac на Intel.
 
-          Откройте .dmg, перетащите «Сократ» в «Программы», затем см. раздел «Первый запуск» в README."
+          Откройте .dmg, перетащите «Сократ» в «Программы». Первый запуск и разрешения — в README."
