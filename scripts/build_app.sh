@@ -21,6 +21,8 @@ swiftc -O -parse-as-library \
 cp "$ROOT/app/Info.plist" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 cp "$ROOT/server/translate_server.py" "$APP/Contents/Resources/"
+cp -R "$ROOT/app/Resources/Fonts" "$APP/Contents/Resources/Fonts"
+iconutil -c icns "$ROOT/app/Resources/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
 cp -R "$PYDIR" "$APP/Contents/Resources/python"
 cp -R "$MODEL" "$APP/Contents/Resources/model"
 

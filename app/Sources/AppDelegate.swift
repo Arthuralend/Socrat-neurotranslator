@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ServerManager.shared.start()
+        setupMainMenu()
         setupStatusItem()
 
         monitor.onTrigger = { [weak self] in
@@ -36,11 +37,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.show(text: text)
     }
 
+    // MARK: - Главное меню
+
+    /// Меню «Правка» не видно (у приложения нет Dock-значка), но через него macOS
+    /// обрабатывает ⌘A, ⌘C, ⌘V, ⌘X, ⌘Z в полях ввода окна перевода.
+    private func setupMainMenu() {
+        let main = NSMenu()
+
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Выйти из «Сократа»", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Правка")
+        edit.addItem(withTitle: "Отменить", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Повторить", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Вырезать", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Копировать", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Вставить", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Выбрать всё", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+
+        NSApp.mainMenu = main
+    }
+
     // MARK: - Строка меню
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "Σ"
+        statusItem.button?.image = Theme.menuBarImage()
         statusItem.button?.toolTip = "Сократ — двойное ⌘C для перевода"
         rebuildMenu()
     }
@@ -61,6 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(item("Настройки «Универсального доступа»…", #selector(openAccessibility)))
         menu.addItem(item("Открыть лог сервера", #selector(openLog)))
+        menu.addItem(.separator())
+        menu.addItem(item("О программе «Сократ»", #selector(showAbout)))
+        menu.addItem(item("Разработчик: LuSoft — написать", #selector(writeToDeveloper)))
         menu.addItem(.separator())
         menu.addItem(item("Выйти", #selector(quit), key: "q"))
 
@@ -120,6 +153,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openLog() {
         NSWorkspace.shared.open(ServerManager.shared.logURL)
+    }
+
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "Сократ — нейропереводчик",
+            .credits: NSAttributedString(
+                string: "Офлайн-перевод на модели Meta NLLB-200.\nРазработчик: LuSoft · armenoid@gmail.com",
+                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]),
+        ])
+    }
+
+    @objc private func writeToDeveloper() {
+        let subject = "Сократ — нейропереводчик".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "mailto:armenoid@gmail.com?subject=\(subject)") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func quit() {

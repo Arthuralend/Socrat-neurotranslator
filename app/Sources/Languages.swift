@@ -29,6 +29,13 @@ struct Lang: Hashable, Identifiable {
         if !filtered.isEmpty { all = filtered }
     }
 
+    /// Короткий код для интерфейса: EN, RU, HY… (ISO 639-1, если он есть).
+    var shortCode: String {
+        let iso3 = String(code.prefix(3))
+        if let alpha2 = Locale.LanguageCode(iso3).identifier(.alpha2) { return alpha2.uppercased() }
+        return iso3.uppercased()
+    }
+
     func matches(_ query: String) -> Bool {
         query.isEmpty
             || name.localizedCaseInsensitiveContains(query)
