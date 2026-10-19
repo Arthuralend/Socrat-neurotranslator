@@ -15,6 +15,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -158,12 +159,24 @@ def make_handler(translator: Translator, lock: threading.Lock):
     return Handler
 
 
+def default_threads() -> int:
+    """На Apple Silicon используем только производительные ядра: экономичные замедляют перевод."""
+    try:
+        out = subprocess.run(["sysctl", "-n", "hw.perflevel0.physicalcpu"],
+                             capture_output=True, text=True, timeout=2).stdout.strip()
+        if out.isdigit() and int(out) > 0:
+            return int(out)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return max(1, (os.cpu_count() or 4) - 2)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, help="папка с моделью CTranslate2")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--device", default="cpu")
-    ap.add_argument("--threads", type=int, default=max(1, (os.cpu_count() or 4) - 2))
+    ap.add_argument("--threads", type=int, default=default_threads())
     args = ap.parse_args()
 
     translator = Translator(args.model, args.device, args.threads)
