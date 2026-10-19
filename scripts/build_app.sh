@@ -13,7 +13,7 @@ VERSION="${VERSION:-1.0.0}"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-swiftc -O \
+swiftc -O -parse-as-library \
   -target "$(uname -m)-apple-macos13.0" \
   -o "$APP/Contents/MacOS/Sokrat" \
   "$ROOT"/app/Sources/*.swift
