@@ -91,11 +91,89 @@ jobs:
           msg="$(sed -e 's/%/%25/g' build/err.txt | awk '{printf "%s%%0A", $0}')"
           echo "::error title=Лог сборки::$msg"
 
+  windows:
+    name: Windows (x64)
+    needs: model
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: model
+          path: model
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Зависимости
+        run: |
+          mkdir -p build
+          python -m pip install --upgrade pip 2>&1 | tee -a build/ci.log
+          python -m pip install -r windows/requirements.txt pyinstaller 2>&1 | tee -a build/ci.log
+
+      - name: Проверка из исходников
+        run: |
+          status=0
+          python windows/sokrat_win.py --selftest --model model --report build/selftest-src.txt || status=$?
+          cat build/selftest-src.txt | tee -a build/ci.log
+          exit $status
+
+      - name: Сборка Sokrat.exe
+        run: |
+          python -m PyInstaller --noconfirm --clean --windowed --name Sokrat \
+            --icon windows/assets/sokrat.ico \
+            --paths server --paths windows \
+            --add-data "app/Resources/Fonts:Fonts" --add-data "windows/assets:assets" \
+            --collect-data langdetect --collect-binaries ctranslate2 \
+            --exclude-module tkinter \
+            --distpath build/win --workpath build/pyi \
+            windows/sokrat_win.py 2>&1 | tee -a build/ci.log
+          du -sh build/win/Sokrat
+
+      - name: Проверка собранного Sokrat.exe
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "build\win\Sokrat\Sokrat.exe" -ArgumentList "--selftest","--model","model","--report","build\selftest-exe.txt" -Wait -PassThru
+          if (Test-Path build\selftest-exe.txt) { Get-Content build\selftest-exe.txt -Encoding utf8; Get-Content build\selftest-exe.txt -Encoding utf8 | Add-Content build\ci.log -Encoding utf8 }
+          exit $p.ExitCode
+
+      - name: Установщик
+        run: |
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          [[ -f "$ISCC" ]] || choco install innosetup -y --no-progress 2>&1 | tail -3
+          SOKRAT_VERSION="$(cat VERSION)" "$ISCC" windows/installer.iss 2>&1 | tee -a build/ci.log
+          ls -la build/Sokrat-Setup-x64.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sokrat-windows-x64
+          path: build/Sokrat-Setup-x64.exe
+          compression-level: 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-selftest
+          path: build/selftest-*
+          retention-days: 7
+
+      - name: Ошибки сборки — в сводку
+        if: failure()
+        run: |
+          [[ -f build/ci.log ]] || exit 0
+          grep -E "error|Error|ERROR|failed|Traceback|No such|assert" build/ci.log | head -40 > build/err.txt || true
+          [[ -s build/err.txt ]] || tail -40 build/ci.log > build/err.txt
+          msg="$(sed -e 's/%/%25/g' build/err.txt | awk '{printf "%s%%0A", $0}')"
+          echo "::error title=Лог сборки Windows::$msg"
+
   release:
     name: Публикация релиза
     # Релиз создаётся сам, когда в файле VERSION появляется новый номер версии.
     if: github.ref == 'refs/heads/main'
-    needs: app
+    needs: [app, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -122,11 +200,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.check.outputs.tag }}
         run: |
-          gh release create "$TAG" Sokrat-*.dmg \
+          gh release create "$TAG" Sokrat-*.dmg Sokrat-Setup-x64.exe \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Сократ $TAG" \
             --notes "**Sokrat-arm64.dmg** — для Mac на Apple Silicon (M1–M4).
           **Sokrat-intel.dmg** — для Mac на Intel.
+          **Sokrat-Setup-x64.exe** — для Windows 10/11 (64-бит).
 
-          Откройте .dmg, перетащите «Сократ» в «Программы». Первый запуск и разрешения — в README."
+          Mac: откройте .dmg и перетащите «Сократ» в «Программы». Windows: запустите установщик. Подробности — в README."

@@ -2,3 +2,4 @@ build/
 model/
 __pycache__/
 *.dmg
+*.spec
